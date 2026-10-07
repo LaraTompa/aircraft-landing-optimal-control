@@ -2,9 +2,11 @@
 Optimal control and uncertainty quantification for aircraft landing under uncertain wind disturbances.
 
 ## Setup (for conda)
+```bash
 conda create --name aircraft-oc python=3.11
 conda activate aircraft-oc 
 pip install -r requirements.txt
+```
 
 ## Toy problem
 
