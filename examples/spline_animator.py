@@ -5,9 +5,21 @@ import numpy as np
 from matplotlib.animation import FuncAnimation
 
 if __package__:
-    from .spline_problem import constrained_analytical_solution, solve_spline
+    from .spline_problem import (
+        METHOD_LABELS,
+        METHOD_STYLES,
+        METHODS,
+        constrained_analytical_solution,
+        solve_spline,
+    )
 else:
-    from spline_problem import constrained_analytical_solution, solve_spline
+    from spline_problem import (
+        METHOD_LABELS,
+        METHOD_STYLES,
+        METHODS,
+        constrained_analytical_solution,
+        solve_spline,
+    )
 
 
 def animate_solutions(solutions, interval=30):
@@ -20,7 +32,11 @@ def animate_solutions(solutions, interval=30):
         method: (solution["t"], solution["X"][0])
         for method, solution in solutions.items()
     }
-    curves["Analytical"] = (t_fine, constrained_analytical_solution(t_fine, L))
+    curves["analytical"] = (t_fine, constrained_analytical_solution(t_fine, L))
+    styles = dict(METHOD_STYLES)
+    styles["analytical"] = ("black", ":", "D")
+    labels = dict(METHOD_LABELS)
+    labels["analytical"] = "Analytical constrained"
 
     fig, ax = plt.subplots(figsize=(9, 5))
     all_y = np.concatenate([values[1] for values in curves.values()])
@@ -38,10 +54,11 @@ def animate_solutions(solutions, interval=30):
     lines = {}
     markers = {}
     for method in curves:
-        (line,) = ax.plot([], [], label=method)
-        (marker,) = ax.plot([], [], "o")
+        color, linestyle, marker = styles[method]
+        (line,) = ax.plot([], [], color=color, linestyle=linestyle, label=labels[method])
+        (marker_artist,) = ax.plot([], [], marker, color=color, markersize=9)
         lines[method] = line
-        markers[method] = marker
+        markers[method] = marker_artist
     ax.legend()
 
     def init():
@@ -74,12 +91,9 @@ def animate_solutions(solutions, interval=30):
 
 
 if __name__ == "__main__":
-    solutions = {
-        method: solve_spline(method=method)
-        for method in ("euler", "rk4")
-    }
+    solutions = {method: solve_spline(method=method) for method in METHODS}
     for method, solution in solutions.items():
-        print(f"{method.title()} objective: {solution['objective']:.10f}")
+        print(f"{METHOD_LABELS[method]} objective: {solution['objective']:.10f}")
     print("Analytical unconstrained objective: 2.0000000000")
     figure, animation = animate_solutions(solutions)
     plt.show()
