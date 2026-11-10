@@ -1,23 +1,29 @@
-"""Animate the Euler and RK4 spline solutions against the analytical curve."""
+"""Animate the spline solutions against the analytical curve."""
+
+from pathlib import Path
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation
 
 if __package__:
-    from .spline_problem import (
+    from ..solve_spline_problem import (
         METHOD_LABELS,
         METHOD_STYLES,
         METHODS,
         constrained_analytical_solution,
+        reconstruct_trajectory,
         solve_spline,
     )
 else:
-    from spline_problem import (
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from solve_spline_problem import (
         METHOD_LABELS,
         METHOD_STYLES,
         METHODS,
         constrained_analytical_solution,
+        reconstruct_trajectory,
         solve_spline,
     )
 
@@ -29,7 +35,7 @@ def animate_solutions(solutions, interval=30):
     L = first_solution["L"]
     t_fine = np.linspace(t[0], t[-1], 10 * (len(t) - 1) + 1)
     curves = {
-        method: (solution["t"], solution["X"][0])
+        method: reconstruct_trajectory(solution)
         for method, solution in solutions.items()
     }
     curves["analytical"] = (t_fine, constrained_analytical_solution(t_fine, L))

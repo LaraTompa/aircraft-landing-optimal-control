@@ -4,10 +4,10 @@ State-constrained spline problem
 
 Continuous-time problem:
 
-    Minimiere
+    Minimize
         J = 1/2 * integral_0^1 (y''(t))^2 dt
 
-    unter den Nebenbedingungen
+    subject to
         y(t) <= L,                    t in [0, 1]
         y(0) = 0,  y(1) = 0
         y'(0) = 1, y'(1) = -1
@@ -16,7 +16,7 @@ Optimal-control formulation:
 
     x1(t) = y(t),  x2(t) = y'(t),  u(t) = y''(t)
 
-    Minimiere
+    Minimize
         J = 1/2 * integral_0^1 u(t)^2 dt
 
     subject to
@@ -89,6 +89,17 @@ Direct multiple-shooting discretization:
             x2[k+1] = x2[k] + h*U[k]
         RK4 is exact for these dynamics when U is constant per interval.
 
+    Runge-Kutta order 5 (Dormand-Prince weights, fixed step, 6 stages):
+        The same shooting equalities X[k+1] = Phi_RK5(X[k], U[k]) with the
+        Dormand-Prince tableau a_ij, b_i. For constant U every stage has
+        K_{i,1} = x2[k] + c_i*h*U[k], K_{i,2} = U[k] (row sums of a equal c_i),
+        so the update is again exactly
+            x1[k+1] = x1[k] + h*x2[k] + (h^2/2)*U[k]  (since sum b_i c_i = 1/2)
+            x2[k+1] = x2[k] + h*U[k].
+        Any Runge-Kutta method of order >= 2 is exact here, so RK5 yields the
+        same discrete problem and solution as RK4 (differences ~1e-16) and only
+        costs more stages.
+
     For either method the piecewise-constant-control cost is
         J_N = 1/2 * h * sum(k=0..N-1) U[k]^2,
     which is the exact integral of u^2 for this control parameterization.
@@ -115,6 +126,22 @@ Direct collocation (Hermite-Simpson):
     Note: with piecewise CONSTANT u, Hermite-Simpson and RK4 give the same
     discrete solution for these dynamics (difference ~1e-16), so a
     piecewise-linear control is used to obtain a distinct method.
+
+Single shooting with an ODE solver (cost discretized, dynamics not):
+
+    Only the objective and the control are discretized: U[k] is constant on
+    [t[k], t[k+1]) and J_N = 1/2 * h * sum U[k]^2. The dynamics are NOT
+    turned into algebraic constraints; instead the ODE x' = (x2, u) is
+    integrated numerically with CasADi's integrator (SUNDIALS CVODES,
+    abstol = reltol = 1e-12) over each interval, starting from the
+    previous interval's end state. The decision variables are only the N
+    controls; the states X[k] = F(X[k-1], U[k-1]) are implicit functions of U.
+    The NLP has the terminal condition x[N] = (0, -1) as equality and
+    x1[k] <= L at k = 1..N-1 as inequality, and is solved with IPOPT. CVODES
+    provides only first-order sensitivities, so IPOPT uses a limited-memory
+    BFGS Hessian approximation. Because the integrator is (numerically)
+    exact for constant u, the discrete problem equals the RK4/QP problem,
+    so the solution agrees with them up to the solver tolerances.
 
 Condensed QP solved with SQP (single shooting in matrix form):
 
@@ -167,11 +194,13 @@ Analytical constrained solution (for comparison):
         The flat arc exists only if 3*L < 1/2, i.e. L < 1/6.
 
 Run from the repository root:
-    python examples\\spline_problem.py
-    python examples\\spline_animator.py
+    python examples\\solve_spline_problem.py
+    python -m examples.spline_problem_scripts.spline_animator
 
 Requires CasADi, NumPy, and Matplotlib.
 """
+
+import time
 
 import casadi as ca
 import matplotlib.pyplot as plt
@@ -179,7 +208,7 @@ import numpy as np
 
 
 N_INTERVALS = 100
-L_BOUND = 0.1
+L_BOUND = 0.2
 FINAL_TIME = 1.0
 
 
@@ -222,6 +251,35 @@ def _rk4_step(x1, x2, u, h):
     )
 
 
+def _explicit_rk_step(a, b, x1, x2, u, h):
+    """One explicit Runge-Kutta step (Butcher tableau a, b) for x' = (x2, u), u constant."""
+    stages = []  # stage derivatives K_i = (x2 at the stage, u)
+    for row in a:
+        x2_stage = x2 + h * sum((w * K[1] for w, K in zip(row, stages)), 0.0)
+        stages.append((x2_stage, u))
+    return (
+        x1 + h * sum(w * K[0] for w, K in zip(b, stages)),
+        x2 + h * sum(w * K[1] for w, K in zip(b, stages)),
+    )
+
+
+# Dormand-Prince 5th-order weights (6 stages, fixed step); rows are the a_ij.
+_DP5_A = (
+    (),
+    (1 / 5,),
+    (3 / 40, 9 / 40),
+    (44 / 45, -56 / 15, 32 / 9),
+    (19372 / 6561, -25360 / 2187, 64448 / 6561, -212 / 729),
+    (9017 / 3168, -355 / 33, 46732 / 5247, 49 / 176, -5103 / 18656),
+)
+_DP5_B = (35 / 384, 0.0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84)
+
+
+def _rk5_step(x1, x2, u, h):
+    """One fixed-step Dormand-Prince order-5 step for x' = (x2, u), u constant."""
+    return _explicit_rk_step(_DP5_A, _DP5_B, x1, x2, u, h)
+
+
 def _affine_step_matrices(step, h):
     """Extract A_d and B_d from an affine step function x_next = A_d*x+B_d*u."""
     origin = np.asarray(step(0.0, 0.0, 0.0, h), dtype=float)
@@ -236,11 +294,12 @@ def _affine_step_matrices(step, h):
 
 
 def print_dynamics_analysis(h):
-    """Print the continuous-time analysis and three one-step updates."""
+    """Print the continuous-time analysis and the one-step updates."""
     A_exact = np.eye(2) + h * A_CONTINUOUS
     B_exact = np.array([[h**2 / 2], [h]])
     A_euler, B_euler = _affine_step_matrices(_euler_step, h)
     A_rk4, B_rk4 = _affine_step_matrices(_rk4_step, h)
+    A_rk5, B_rk5 = _affine_step_matrices(_rk5_step, h)
 
     print("\nDynamical systems analysis")
     print("--------------------------")
@@ -256,25 +315,30 @@ def print_dynamics_analysis(h):
         ("Exact ZOH", A_exact, B_exact),
         ("Forward Euler", A_euler, B_euler),
         ("RK4", A_rk4, B_rk4),
+        ("RK5 (Dormand-Prince)", A_rk5, B_rk5),
     ):
         print(f"{name}:")
         print("A_d =\n", A_d)
         print("B_d =\n", B_d)
 
 
-METHODS = ("euler", "rk4", "hermite_simpson", "sqp_qp")
+METHODS = ("euler", "rk4", "rk5", "hermite_simpson", "sqp_qp", "ode_shooting")
 METHOD_LABELS = {
     "euler": "Shooting + Euler",
     "rk4": "Shooting + RK4",
+    "rk5": "Shooting + RK5 (Dormand-Prince)",
     "hermite_simpson": "Collocation (Hermite-Simpson)",
     "sqp_qp": "Condensed QP (SQP)",
+    "ode_shooting": "Single shooting + ODE solver (CVODES)",
 }
 # (color, linestyle, marker) so the methods stay distinguishable in print.
 METHOD_STYLES = {
     "euler": ("tab:blue", "-", "s"),
     "rk4": ("tab:orange", "--", "o"),
+    "rk5": ("tab:brown", (0, (5, 2)), "v"),
     "hermite_simpson": ("tab:green", "-.", "^"),
     "sqp_qp": ("tab:purple", ":", "x"),
+    "ode_shooting": ("tab:red", (0, (3, 1, 1, 1)), "D"),
 }
 
 
@@ -325,12 +389,20 @@ def condensed_qp_matrices(N, L):
     }
 
 
-def solve_condensed_qp(N, L):
+def default_guess(t):
+    """Default initial guess (y, y', y'') = (t(1-t), 1-2t, -2), evaluated at t."""
+    t = np.asarray(t, dtype=float)
+    return t * (1.0 - t), 1.0 - 2.0 * t, np.full_like(t, -2.0)
+
+
+def solve_condensed_qp(N, L, guess=default_guess):
     """Solve the condensed QP with CasADi's SQP method (qpOASES for the QP).
 
     The problem is a strictly convex QP, so SQP converges after one QP
-    subproblem. Returns (t, X, U, objective, iterations, return_status) and
-    raises RuntimeError if the solver does not report success.
+    subproblem. `guess(t)` returns the initial (y, y', y'') on the time grid;
+    only the control y'' at the interval starts is used. Returns
+    (t, X, U, objective, iterations, return_status) and raises RuntimeError if
+    the solver does not report success.
     """
     qp = condensed_qp_matrices(N, L)
     h = FINAL_TIME / N
@@ -355,7 +427,8 @@ def solve_condensed_qp(N, L):
     lbg = np.concatenate((qp["b"], np.full(qp["g"].size, -np.inf)))
     ubg = np.concatenate((qp["b"], qp["g"]))
     try:
-        solution = solver(x0=np.full(N, -2.0), lbg=lbg, ubg=ubg)
+        t_nodes = np.linspace(0.0, FINAL_TIME, N + 1)
+        solution = solver(x0=guess(t_nodes[:-1])[2], lbg=lbg, ubg=ubg)
     except RuntimeError as exc:
         raise RuntimeError(
             f"SQP failed (N={N}, L={L}); the discrete problem may be infeasible. "
@@ -404,8 +477,77 @@ def _hermite_simpson_defects(X, Xc, U, h):
     return ca.vertcat(*defects)
 
 
-def solve_spline(method="rk4", N=N_INTERVALS, L=L_BOUND):
-    """Solve the spline problem with shooting (Euler/RK4) or Hermite-Simpson collocation.
+def solve_ode_shooting(N, L, guess=default_guess):
+    """Single shooting with the dynamics integrated by CVODES (cost discretized).
+
+    `guess(t)` returns the initial (y, y', y''); only y'' at the interval
+    starts is used. Returns (t, X, U, objective, iterations, return_status); raises
+    RuntimeError if IPOPT does not report success.
+    """
+    h = FINAL_TIME / N
+    x = ca.MX.sym("x", 2)
+    u = ca.MX.sym("u")
+    integrator = ca.integrator(
+        "spline_ode",
+        "cvodes",
+        {"x": x, "p": u, "ode": ca.vertcat(x[1], u)},
+        0.0,
+        h,
+        {"abstol": 1e-12, "reltol": 1e-12},
+    )
+    U = ca.MX.sym("U", N)
+    x_k = ca.DM([0.0, 1.0])
+    states = [x_k]
+    for k in range(N):
+        x_k = integrator(x0=x_k, p=U[k])["xf"]
+        states.append(x_k)
+    X = ca.horzcat(*states)
+    g = ca.vertcat(X[:, N] - ca.DM([0.0, -1.0]), X[0, 1:N].T)
+    solver = ca.nlpsol(
+        "spline_ode_shooting",
+        "ipopt",
+        {"x": U, "f": 0.5 * h * ca.sumsqr(U), "g": g},
+        {
+            "ipopt.print_level": 0,
+            "ipopt.tol": 1e-12,
+            "ipopt.acceptable_tol": 1e-12,
+            "ipopt.bound_relax_factor": 0.0,
+            # CVODES offers no second-order sensitivities.
+            "ipopt.hessian_approximation": "limited-memory",
+            "print_time": False,
+        },
+    )
+    lbg = np.concatenate((np.zeros(2), np.full(N - 1, -np.inf)))
+    ubg = np.concatenate((np.zeros(2), np.full(N - 1, L)))
+    t_nodes = np.linspace(0.0, FINAL_TIME, N + 1)
+    solution = solver(x0=guess(t_nodes[:-1])[2], lbg=lbg, ubg=ubg)
+    stats = solver.stats()
+    if not stats["success"]:
+        raise RuntimeError(
+            f"IPOPT failed (ode_shooting, N={N}, L={L}): {stats.get('return_status')}"
+        )
+    U_opt = solution["x"].full().flatten()
+    X_opt = np.asarray(ca.Function("X_fun", [U], [X])(U_opt)).reshape(2, N + 1)
+    t = np.linspace(0.0, FINAL_TIME, N + 1)
+    return t, X_opt, U_opt, float(solution["f"]), stats["iter_count"], stats["return_status"]
+
+
+def solve_spline(method="rk4", N=N_INTERVALS, L=L_BOUND, guess=default_guess):
+    """Solve the spline problem and add the wall-clock time ("time", seconds).
+
+    `guess(t)` returns the initial (y, y', y'') evaluated on the array t; it
+    initializes the states and controls of the solver (the control-only
+    methods use y'' only). The time covers the whole call (problem and solver
+    construction plus the solve), measured with time.perf_counter().
+    """
+    start = time.perf_counter()
+    solution = _solve_spline(method, N, L, guess)
+    solution["time"] = time.perf_counter() - start
+    return solution
+
+
+def _solve_spline(method, N, L, guess=default_guess):
+    """Solve with shooting (Euler/RK4/RK5/ODE), Hermite-Simpson collocation or the QP.
 
     Shooting methods return U with N entries (piecewise constant control);
     Hermite-Simpson returns U with N+1 node values (piecewise linear control).
@@ -417,8 +559,9 @@ def solve_spline(method="rk4", N=N_INTERVALS, L=L_BOUND):
     if L < 0:
         raise ValueError("L must be nonnegative because x1(0) = 0")
 
-    if method == "sqp_qp":
-        t, X_opt, U_opt, objective_value, iterations, status = solve_condensed_qp(N, L)
+    if method in ("sqp_qp", "ode_shooting"):
+        solve = solve_condensed_qp if method == "sqp_qp" else solve_ode_shooting
+        t, X_opt, U_opt, objective_value, iterations, status = solve(N, L, guess)
         return {
             "t": t,
             "X": X_opt,
@@ -445,7 +588,8 @@ def solve_spline(method="rk4", N=N_INTERVALS, L=L_BOUND):
             ca.sumsqr(U[:-1]) + 4 * ca.sumsqr(u_mid) + ca.sumsqr(U[1:])
         )
     else:
-        step = _euler_step if method == "euler" else _rk4_step
+        steps = {"euler": _euler_step, "rk4": _rk4_step, "rk5": _rk5_step}
+        step = steps[method]
         dynamics = ca.vertcat(
             *[
                 X[:, k + 1] - ca.vertcat(*step(X[0, k], X[1, k], U[k], h))
@@ -482,13 +626,13 @@ def solve_spline(method="rk4", N=N_INTERVALS, L=L_BOUND):
     )
 
     t = np.linspace(0.0, FINAL_TIME, N + 1)
-    X_guess = np.vstack((analytical_solution(t), 1.0 - 2.0 * t))
-    U_guess = np.full(n_controls, -2.0)
+    y_guess, v_guess, u_guess = guess(t)
+    X_guess = np.vstack((y_guess, v_guess))
+    U_guess = u_guess if collocation else u_guess[:-1]
     z0 = np.concatenate((X_guess.reshape(-1, order="F"), U_guess))
     if collocation:
-        t_mid = 0.5 * (t[:-1] + t[1:])
-        Xc_guess = np.vstack((analytical_solution(t_mid), 1.0 - 2.0 * t_mid))
-        z0 = np.concatenate((z0, Xc_guess.reshape(-1, order="F")))
+        y_mid, v_mid, _ = guess(0.5 * (t[:-1] + t[1:]))
+        z0 = np.concatenate((z0, np.vstack((y_mid, v_mid)).reshape(-1, order="F")))
     lbg = np.concatenate((np.zeros(equality_count), np.full(N + 1, -np.inf)))
     ubg = np.concatenate((np.zeros(equality_count), np.full(N + 1, L)))
 
@@ -515,6 +659,43 @@ def solve_spline(method="rk4", N=N_INTERVALS, L=L_BOUND):
     }
 
 
+def reconstruct_trajectory(solution, points_per_interval=20):
+    """Continuous y(t) between the nodes, consistent with each method's model.
+
+    With tau = t - t[k], h = t[k+1] - t[k], y_k = x1[k], v_k = x2[k]:
+      * RK4, RK5, QP, ODE shooting (piecewise constant u, exact response):
+            y = y_k + v_k*tau + u_k*tau^2/2                    (quadratic)
+      * Euler (its model has x1[k+1] = x1[k] + h*x2[k]):
+            y = y_k + v_k*tau                                  (linear)
+      * Hermite-Simpson: cubic Hermite interpolant of y through the node
+        values y_k, y_{k+1} and slopes v_k, v_{k+1}.
+    Every piece passes through both neighbouring nodes. Returns (t, y).
+    """
+    method = solution["method"]
+    t_nodes = solution["t"]
+    y_nodes, v_nodes = solution["X"]
+    U = np.asarray(solution["U"]).ravel()
+    t_dense, y_dense = [], []
+    for k in range(len(t_nodes) - 1):
+        h = t_nodes[k + 1] - t_nodes[k]
+        tau = np.linspace(0.0, h, points_per_interval)
+        if method == "euler":
+            y = y_nodes[k] + v_nodes[k] * tau
+        elif method == "hermite_simpson":
+            s = tau / h
+            y = (
+                (2 * s**3 - 3 * s**2 + 1) * y_nodes[k]
+                + (s**3 - 2 * s**2 + s) * h * v_nodes[k]
+                + (-2 * s**3 + 3 * s**2) * y_nodes[k + 1]
+                + (s**3 - s**2) * h * v_nodes[k + 1]
+            )
+        else:
+            y = y_nodes[k] + v_nodes[k] * tau + 0.5 * U[k] * tau**2
+        t_dense.extend(t_nodes[k] + tau)
+        y_dense.extend(y)
+    return np.array(t_dense), np.array(y_dense)
+
+
 def plot_comparison(solutions):
     """Plot all solutions alongside the analytical solutions."""
     fig, ax = plt.subplots(figsize=(9, 5))
@@ -526,13 +707,14 @@ def plot_comparison(solutions):
             alpha=0.25, label="Analytical constrained")
     for method, solution in solutions.items():
         color, linestyle, marker = METHOD_STYLES[method]
+        t_dense, y_dense = reconstruct_trajectory(solution)
         ax.plot(
-            solution["t"],
-            solution["X"][0],
+            t_dense,
+            y_dense,
             color=color,
             linestyle=linestyle,
             marker=marker,
-            markevery=max(len(solution["t"]) // 20, 1),
+            markevery=max(len(t_dense) // 20, 1),
             markersize=5,
             label=f"{METHOD_LABELS[method]} (J={solution['objective']:.6f})",
         )
@@ -550,7 +732,10 @@ if __name__ == "__main__":
     print_dynamics_analysis(FINAL_TIME / N_INTERVALS)
     solutions = {method: solve_spline(method=method) for method in METHODS}
     for method, solution in solutions.items():
-        print(f"{METHOD_LABELS[method]} objective: {solution['objective']:.10f}")
+        print(
+            f"{METHOD_LABELS[method]} objective: {solution['objective']:.10f} "
+            f"(time {solution['time']:.3f} s)"
+        )
     print("Analytical unconstrained objective: 2.0000000000")
     plot_comparison(solutions)
     plt.show()
