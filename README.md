@@ -18,7 +18,7 @@ Minimize $\frac12\int_0^1 \ddot y(t)^2\,dt$ subject to $y(t)\le L$, $y(0)=y(1)=0
 With $x_1=y$, $x_2=\dot y$, $u=\ddot y$ this is a 2-state, 1-control problem: $\dot x_1=x_2$, $\dot x_2=u$, $J=\frac12\int_0^1 u^2\,dt$.
 
 ```bash
-python examples/solve_spline_problem.py  # Solve, print results and show the comparison plot
+python examples/solve_spline_problem.py  # Solve and show direct and homotopy comparisons
 python -m examples.spline_problem_scripts.spline_animator  # Show the animation
 python -m examples.spline_problem_scripts.spline_plots  # Save comparison figures
 python -m examples.spline_problem_scripts.spline_initializations  # Compare initial guesses
@@ -30,6 +30,19 @@ This generated directory is git-ignored; the scripts do not generate a LaTeX rep
 The solver and animator display their results interactively and do not write files.
 The helper scripts can also be run directly, for example
 `python examples/spline_problem_scripts/spline_plots.py`.
+
+The solver script also compares direct RK4 and Hermite-Simpson solutions with
+midpoint-constraint continuation at fixed $L=0.1$, from $y(0.5)=0.1$ through
+$0.0999$ to $0.09$ (11 solves). It compares the objectives at the latter two
+values. Each solve uses the previous solution as an
+interpolated primal initial guess (not a dual warm start). The script prints
+objectives, iterations, statuses and sampled maximum $y-L$, and plots objective
+and trajectory comparisons with the unrestricted analytical reference. State
+constraints are imposed at nodes only; a positive sampled excess reveals a
+between-node violation, while sampling does not prove continuous feasibility.
+The final solution is in `run_midpoint_continuation`'s returned history, under
+`histories[method][-1]["solution"]`. `solve_spline(..., midpoint_value=c)`
+requires an even mesh; without this argument it solves the original problem.
 
 **Methods.** Six formulations with $N=100$ intervals, solved with CasADi (IPOPT with tolerance $10^{-12}$ and bound relaxation off, or `sqpmethod` for the QP; every solve checks the solver status and `solve_spline` returns its wall-clock `time`). The bound $x_1\le L$ is enforced at the nodes only. `N_INTERVALS` and `L_BOUND` at the top of `solve_spline_problem.py` are easy to change; $N\ge2$ is required.
 
@@ -91,7 +104,9 @@ python land_airplane.py       # Solve the landing problem and animate its trajec
 
 Use `animate_airplane(x, y, theta, target=None, scale=1.0)` with the main wheel contact point `(x, y)` in metres and pitch angle `theta` [rad, nose up > 0]; use `scale` > 1 to enlarge the plane for visibility; `make_airplane` / `set_pose` give lower-level access to the patches.
 
-The landing script opens both the solution plots and a following-view animation at approximately 5x real time. It linearly interpolates the optimized states between nodes. The point-mass model does not calculate pitch or wheel position: the animation treats its position as the main-wheel contact point and assumes pitch equals flight-path angle plus a constant 5-degree angle of attack. These are visualization assumptions, not optimized aircraft attitudes or validated gear geometry.
+The landing problem uses a fixed 65-second duration, an initial airspeed of 95 m/s and a touchdown airspeed of 80 m/s. Thrust and lift coefficient are piecewise-constant controls; the lift coefficient is bounded between 0.8 and 1.8 and the airspeed between 55 and 95 m/s. These parameters and bounds are illustrative, not validated aircraft limits. State constraints are enforced at the discretization nodes, not continuously between them.
+
+The landing script opens both the solution plots and a following-view animation at approximately 5x real time. It linearly interpolates the optimized states between nodes. The point-mass model does not calculate pitch or wheel position: the animation treats its position as the main-wheel contact point and assumes pitch equals flight-path angle plus a constant 5-degree angle of attack, independently of the optimized lift coefficient. These are visualization assumptions, not optimized aircraft attitudes or validated gear geometry.
 
 ### Dependencies
 | Package | Purpose |
