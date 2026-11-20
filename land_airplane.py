@@ -35,7 +35,7 @@ T_scale = 100000.0
 # ============================================================
 
 tf = 65.0
-N = 100
+N = 200
 dt = tf / N
 
 gamma0 = np.deg2rad(-3.0)
@@ -43,7 +43,7 @@ gamma_f = np.deg2rad(-3.0)
 
 x0 = np.array([
     0.0,       # Horizontal position [m]
-    200.0,     # Altitude [m]
+    300.0,     # Altitude [m]
     95.0,      # Airspeed [m/s]
     gamma0     # Flight-path angle [rad]
 ])
