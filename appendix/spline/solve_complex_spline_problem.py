@@ -25,7 +25,7 @@ IPOPT_TOL = 1e-10
 
 # Interior points at which the state constraint is enforced
 PATH_SAMPLES = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
-PLOT_DIR = Path(__file__).resolve().parents[1] / "data" / "spline"
+PLOT_DIR = Path(__file__).resolve().parents[2] / "data" / "spline"
 ARC_QUAD_NODES, ARC_QUAD_WEIGHTS = np.polynomial.legendre.leggauss(5)
 
 # ============================================================

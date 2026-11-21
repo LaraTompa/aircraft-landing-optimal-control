@@ -1,0 +1,44 @@
+# Top level configuration for connecting aircraft, wind, and problem settings
+
+
+name: baseline_point_mass_gaussian
+
+aircraft: ../aircraft/aircraft_pointmass.yaml
+wind: ../wind/gaussian_downdraft.yaml
+problem: ../problems/landing_thrust.yaml
+
+dynamics:
+  model: point_mass
+  wind_aware: true
+
+transcription:
+  method: multiple_shooting
+  integrator: RK4
+
+solver:
+  name: ipopt
+
+  options:
+    expand: true
+    max_iter: 3000
+    tol: 1.0e-7
+    print_level: 5
+
+experiment:
+  type: objective_comparison
+
+  objectives:
+    - squared_thrust
+    - linear_thrust
+
+  warm_start: true
+
+visualization:
+  plots: true
+  wind_field: true
+  animation: true
+
+  animation_settings:
+    solution: squared_thrust
+    playback_speed: 5.0
+    interval: 30

@@ -1,0 +1,56 @@
+# Optimal control problem for aircraft landing with thrust as control
+name: landing_thrust
+
+time:
+  initial: 0.0       # s
+  final: 65.0        # s
+  intervals: 100
+
+initial_state:
+  horizontal_position: 0.0
+  altitude: 300.0
+  airspeed: 95.0
+  flight_path_angle: -3.0  # degrees
+
+terminal_state:
+  horizontal_position: 5420.0
+  altitude: 0.0
+  airspeed: 80.0
+  flight_path_angle: -3.0  # degrees
+
+state_constraints:
+  altitude:
+    min: 0.0
+    max: null
+
+  airspeed:
+    min: 55.0
+    max: 95.0
+
+  flight_path_angle:
+    min: -8.0    # degrees
+    max: 2.0     # degrees
+
+control_constraints:
+  thrust:
+    min: 0.0
+    max: 90070.0  # N
+
+  lift_coefficient:
+    min: 0.8
+    max: 1.8
+
+objectives:
+  squared_thrust:
+    type: integral_squared
+    control: thrust
+    scale: 100000.0
+
+  linear_thrust:
+    type: integral
+    control: thrust
+    scale: 100000.0
+
+initial_guess:
+  thrust: 45000.0       # N
+  lift_coefficient: 1.4

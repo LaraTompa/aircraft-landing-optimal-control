@@ -1,0 +1,18 @@
+# Gaussian downdraft wind configuration
+name: gaussian_downdraft
+type: gaussian
+
+max_vertical_wind: 15.0   # m/s
+
+center:
+  horizontal_position: 3500.0  # m
+  altitude: 150.0              # m
+
+standard_deviation:
+  horizontal_position: 800.0   # m
+  altitude: 150.0              # m
+
+horizontal_wind: 0.0           # m/s
+
+# Negative vertical wind represents a downdraft.
+vertical_wind_sign: -1
