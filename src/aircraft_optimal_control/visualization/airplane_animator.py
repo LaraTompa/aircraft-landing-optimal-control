@@ -137,12 +137,54 @@ def animate_airplane(x, y, theta, target=None, scale=1.0, interval=30,
     return FuncAnimation(fig, update, frames=x.size, interval=interval, blit=False)
 
 
-if __name__ == "__main__":
-    # Placeholder flare path with ~5 degree nose-up attitude; replace with OCP output.
-    x = np.linspace(0.0, 300.0, 150)
-    y = 12.0 * (1 - x / 300.0) ** 2
-    theta = np.arctan(np.gradient(y, x)) + np.deg2rad(5.0)
 
-    ani = animate_airplane(x, y, theta, target=300.0, scale=2.5,
-                           title="Airbus A320 model (placeholder path)")
-    plt.show()
+def animate_solution(
+    solution,
+    pitch_angle=None,
+    target=None,
+    scale=2.5,
+    interval=30,
+    follow=False,
+    title="Aircraft landing",
+):
+    """
+    Animate an extracted OCP solution.
+
+    pitch_angle:
+        Optional aircraft pitch angle array in radians.
+        If omitted, flight-path angle gamma is used as an
+        approximation. This is not physically exact.
+    """
+
+    X = np.asarray(solution["X"])
+
+    s = X[0, :]
+    h = X[1, :]
+    gamma = X[3, :]
+
+    if pitch_angle is None:
+        theta = gamma
+    else:
+        theta = np.asarray(pitch_angle, dtype=float)
+
+        if theta.shape != gamma.shape:
+            raise ValueError(
+                "pitch_angle must have the same length as the state trajectory."
+            )
+
+    if target is None:
+        target = s[-1]
+
+    animation = animate_airplane(
+        x=s,
+        y=h,
+        theta=theta,
+        target=target,
+        scale=scale,
+        interval=interval,
+        title=title,
+        follow=follow,
+    )
+
+    return animation
+

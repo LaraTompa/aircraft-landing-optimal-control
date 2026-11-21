@@ -1,0 +1,21 @@
+# Point mass aircraft configuration
+name: point_mass
+
+mass: 73500.0          # kg
+gravity: 9.81          # m/s^2
+
+aerodynamics:
+  air_density: 1.225   # kg/m^3
+  wing_area: 122.4     # m^2
+
+  drag:
+    CD0: 0.025
+    k: 0.045
+
+  thrust:
+    max: 90070.0       # N
+    scale: 100000.0    # N
+
+  lift_coefficient:
+    min: 0.8
+    max: 1.8
