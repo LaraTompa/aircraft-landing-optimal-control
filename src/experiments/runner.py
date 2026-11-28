@@ -44,17 +44,18 @@ def build_ocp(config, aircraft_model):
 
 def run_comparison(config, aircraft_model, results_dir=None):
     """
-    Solve the same landing problem for the configured objectives.
+    Solve one configured objective or compare two configured objectives.
 
     The first objective is solved from the problem's initial guess.
-    If warm_start is enabled, its solution initializes the second solve.
+    If warm_start is enabled in a comparison, the first solution initializes
+    the second solve.
     """
 
     objective_names = config.experiment.objectives
 
-    if len(objective_names) != 2:
+    if len(objective_names) not in {1, 2}:
         raise ValueError(
-            "The current comparison runner requires exactly two objectives."
+            "Configure one objective or a two-objective comparison."
         )
 
     problem = build_ocp(config, aircraft_model)
@@ -74,7 +75,8 @@ def run_comparison(config, aircraft_model, results_dir=None):
         print(f"Objective value: {extracted['objectives'][objective_name]:.8f}")
 
         if (
-            index == 0
+            len(objective_names) == 2
+            and index == 0
             and config.experiment.warm_start
         ):
             print("Using the first solution as a warm start.")
@@ -176,6 +178,7 @@ def run_visualizations(results, config, aircraft_model, results_dir):
                 solution=solution,
                 objective_name=objective_name,
                 wind_model=wind_model,
+                aircraft_model=aircraft_model,
                 output_path=plots_dir / f"{objective_name}_solution.png",
                 show=False,
             )

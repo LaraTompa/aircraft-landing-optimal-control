@@ -4,11 +4,14 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from aircraft_optimal_control.models.point_mass import thrust_at, lift_coefficient
+
 
 def plot_solution(
     solution,
     objective_name,
     wind_model=None,
+    aircraft_model=None,
     output_path=None,
     show=True,
 ):
@@ -16,8 +19,8 @@ def plot_solution(
     Plot the state and control trajectories of an OCP solution.
 
     Expected solution format:
-        X: (4, N+1)
-        U: (2, N)
+        X: (n_states, N+1)
+        U: (n_controls, N)
         time: (N+1,)
         control_time: (N,)
     """
@@ -32,10 +35,10 @@ def plot_solution(
     V = X[2, :]
     gamma = np.rad2deg(X[3, :])
 
-    thrust = U[0, :]
-    CL = U[1, :]
+    paper_model = aircraft_model is not None and "angle_of_attack" in aircraft_model.STATE_INDICES
 
-    fig, axes = plt.subplots(3, 2, figsize=(14, 11))
+    fig, axes = plt.subplots(4 if paper_model else 3, 2,
+                             figsize=(14, 14 if paper_model else 11))
     fig.suptitle(
         f"Aircraft landing - {objective_name}",
         fontsize=15,
@@ -66,24 +69,46 @@ def plot_solution(
     ax.set_title("Flight-path angle")
     ax.grid(True)
 
-    # Thrust
-    ax = axes[1, 1]
-    ax.step(control_time, thrust, where="post", linewidth=2)
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Thrust [N]")
-    ax.set_title("Thrust")
-    ax.grid(True)
+    if paper_model:
+        alpha = X[aircraft_model.STATE_INDICES["angle_of_attack"], :]
+        alpha_dot = U[aircraft_model.CONTROL_INDICES["angle_of_attack_rate"], :]
+        ax = axes[1, 1]
+        ax.plot(time, np.rad2deg(alpha), linewidth=2)
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel("Angle of attack [deg]")
+        ax.set_title("Angle of attack")
+        ax.grid(True)
 
-    # Lift coefficient
-    ax = axes[2, 0]
-    ax.step(control_time, CL, where="post", linewidth=2)
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Lift coefficient [-]")
-    ax.set_title("Lift coefficient")
-    ax.grid(True)
+        thrust = np.asarray([
+            float(thrust_at(Vi, ti, aircraft_model.aircraft))
+            for Vi, ti in zip(V, time)
+        ])
+        CL = np.asarray([
+            float(lift_coefficient(alpha_i, aircraft_model.aircraft))
+            for alpha_i in alpha
+        ])
+        plots = [
+            (axes[2, 0], control_time, alpha_dot, "Angle-of-attack rate [rad/s]", "Control"),
+            (axes[2, 1], time, thrust, "Scheduled thrust [N]", "Thrust"),
+            (axes[3, 0], time, CL, "Lift coefficient [-]", "Lift coefficient"),
+        ]
+    else:
+        thrust = U[0, :]
+        CL = U[1, :]
+        plots = [
+            (axes[1, 1], control_time, thrust, "Thrust [N]", "Thrust"),
+            (axes[2, 0], control_time, CL, "Lift coefficient [-]", "Lift coefficient"),
+        ]
+
+    for ax, tx, values, ylabel, title in plots:
+        ax.step(tx, values, where="post", linewidth=2)
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.grid(True)
 
     # Experienced wind
-    ax = axes[2, 1]
+    ax = axes[3, 1] if paper_model else axes[2, 1]
 
     if wind_model is not None:
         wind_values = np.array([

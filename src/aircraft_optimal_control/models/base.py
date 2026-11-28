@@ -8,14 +8,8 @@ class AircraftModel(ABC):
     """
     Abstract base class for aircraft dynamics models.
 
-    State:
-        x = [s, h, V, gamma]
-
-    Control:
-        u = [T, CL]
-
-    Every aircraft model must implement:
-        dynamics(x, u, t)
+    Concrete models declare their own state and control dimensions and
+    implement ``dynamics(x, u, t)``.
     """
 
     STATE_DIM = 4
@@ -41,10 +35,10 @@ class AircraftModel(ABC):
         Parameters
         ----------
         x : casadi.MX or casadi.DM
-            State vector [s, h, V, gamma].
+            Model-specific state vector.
 
         u : casadi.MX or casadi.DM
-            Control vector [T, CL].
+            Model-specific control vector.
 
         t : float or casadi expression
             Current time.
@@ -52,6 +46,6 @@ class AircraftModel(ABC):
         Returns
         -------
         casadi expression
-            State derivative [s_dot, h_dot, V_dot, gamma_dot].
+            Model-specific state derivative.
         """
         raise NotImplementedError

@@ -1,187 +1,108 @@
+"""Primary five-state aircraft point-mass model."""
 
 import casadi as ca
 
+from aircraft_optimal_control.config.loader import PointMassAircraftConfig
 from aircraft_optimal_control.models.base import AircraftModel
-from aircraft_optimal_control.models.aerodynamics import (
-    compute_aerodynamic_forces,
-)
+
+
+def thrust_at(V, t, config: PointMassAircraftConfig):
+    """Scheduled thrust, ramping until ``t0`` and holding full power after."""
+    params = config.thrust
+    beta = ca.if_else(
+        t < params.t0,
+        params.beta0 + params.beta_dot0 * t,
+        1.0,
+    )
+    return beta * (params.A0 + params.A1 * V + params.A2 * V**2)
+
+
+def drag_coefficient(alpha, config: PointMassAircraftConfig):
+    p = config.aerodynamics
+    return p.B0 + p.B1 * alpha + p.B2 * alpha**2
+
+
+def lift_coefficient(alpha, config: PointMassAircraftConfig):
+    p = config.aerodynamics
+    linear = p.C0 + p.C1 * alpha
+    stalled = linear + p.C2 * (alpha - p.alpha_star) ** 2
+    return ca.if_else(alpha <= p.alpha_star, linear, stalled)
+
+
+def compute_angle_of_attack_aerodynamics(V, alpha, config):
+    """Return (qbar, CD, CL, L, D) for the configured angle polars."""
+    physical = config.physical
+    qbar = 0.5 * physical.air_density * V**2
+    CD = drag_coefficient(alpha, config)
+    CL = lift_coefficient(alpha, config)
+    qS = qbar * physical.wing_area
+    return qbar, CD, CL, qS * CL, qS * CD
 
 
 class PointMassAircraft(AircraftModel):
-    """
-    Two-dimensional point-mass aircraft model.
+    """Paper-form dynamics with state [x, h, V, gamma, alpha].
 
-    State:
-        x = [s, h, V, gamma]
-
-    Control:
-        u = [T, CL]
-
-    The model supports wind-aware dynamics, including the
-    material acceleration experienced in a spatially varying
-    wind field.
+    The scalar control is alpha_dot. Thrust follows the configured power
+    schedule and is not a control. Wind must implement the repository's
+    velocity and material_acceleration interface.
     """
 
-    def __init__(
-        self,
-        aircraft_config,
-        wind_model=None,
-        wind_aware=True,
-    ):
+    STATE_DIM = 5
+    CONTROL_DIM = 1
+    STATE_INDICES = {
+        "horizontal_position": 0,
+        "altitude": 1,
+        "airspeed": 2,
+        "flight_path_angle": 3,
+        "angle_of_attack": 4,
+    }
+    CONTROL_INDICES = {"angle_of_attack_rate": 0}
+
+    def __init__(self, aircraft_config, wind_model=None, wind_aware=True):
         self.aircraft = aircraft_config
         self.wind_model = wind_model
         self.wind_aware = wind_aware
-
-        if self.wind_aware and self.wind_model is None:
-            raise ValueError(
-                "A wind model must be provided when wind_aware=True."
-            )
+        if wind_aware and wind_model is None:
+            raise ValueError("A wind model must be provided when wind_aware=True.")
 
     def dynamics(self, x, u, t):
-        """
-        Compute the continuous-time aircraft dynamics.
-
-        Parameters
-        ----------
-        x : CasADi vector
-            [s, h, V, gamma]
-
-        u : CasADi vector
-            [T, CL]
-
-        t : float or CasADi expression
-            Current time.
-
-        Returns
-        -------
-        CasADi vector
-            [s_dot, h_dot, V_dot, gamma_dot]
-        """
-
-        # ----------------------------------------------------
-        # State and control variables
-        # ----------------------------------------------------
-
-        s = x[0]
-        h = x[1]
-        V = x[2]
-        gamma = x[3]
-
-        T = u[0]
-        CL = u[1]
-
-        # ----------------------------------------------------
-        # Aircraft parameters
-        # ----------------------------------------------------
-
-        m = self.aircraft.mass
-        g = self.aircraft.gravity
-
-        # ----------------------------------------------------
-        # Aerodynamic forces
-        # ----------------------------------------------------
-
-        _, _, L, D = compute_aerodynamic_forces(
-            V,
-            CL,
-            self.aircraft,
+        position, altitude, V, gamma, alpha = (x[i] for i in range(5))
+        alpha_dot = u[0]
+        physical = self.aircraft.physical
+        _, _, _, L, D = compute_angle_of_attack_aerodynamics(
+            V, alpha, self.aircraft
         )
-
-        # ----------------------------------------------------
-        # Wind velocity
-        # ----------------------------------------------------
+        T = thrust_at(V, t, self.aircraft)
+        delta = physical.thrust_axis_inclination
 
         if self.wind_aware:
-
-            wind_velocity = self.wind_model.velocity(
-                s,
-                h,
-                t,
-            )
-
-            w_s = wind_velocity[0]
-            w_h = wind_velocity[1]
-
+            wind = self.wind_model.velocity(position, altitude, t)
+            W_x, W_h = wind[0], wind[1]
         else:
+            W_x = W_h = 0.0
 
-            w_s = 0.0
-            w_h = 0.0
-
-        # ----------------------------------------------------
-        # Ground-relative kinematics
-        # ----------------------------------------------------
-
-        s_dot = V * ca.cos(gamma) + w_s
-        h_dot = V * ca.sin(gamma) + w_h
-
-        # ----------------------------------------------------
-        # Wind material acceleration
-        # ----------------------------------------------------
+        x_dot = V * ca.cos(gamma) + W_x
+        h_dot = V * ca.sin(gamma) + W_h
 
         if self.wind_aware:
-
-            ground_velocity = ca.vertcat(
-                s_dot,
-                h_dot,
+            wind_acc = self.wind_model.material_acceleration(
+                position, altitude, ca.vertcat(x_dot, h_dot), t
             )
-
-            wind_acceleration = (
-                self.wind_model.material_acceleration(
-                    s,
-                    h,
-                    ground_velocity,
-                    t,
-                )
-            )
-
-            a_w_s = wind_acceleration[0]
-            a_w_h = wind_acceleration[1]
-
+            Wdot_x, Wdot_h = wind_acc[0], wind_acc[1]
         else:
-
-            a_w_s = 0.0
-            a_w_h = 0.0
-
-        # ----------------------------------------------------
-        # Transform wind acceleration into flight coordinates
-        # ----------------------------------------------------
-
-        a_w_t = (
-            ca.cos(gamma) * a_w_s
-            + ca.sin(gamma) * a_w_h
-        )
-
-        a_w_n = (
-            -ca.sin(gamma) * a_w_s
-            + ca.cos(gamma) * a_w_h
-        )
-
-        # ----------------------------------------------------
-        # Airspeed dynamics
-        # ----------------------------------------------------
+            Wdot_x = Wdot_h = 0.0
 
         V_dot = (
-            (T - D) / m
-            - g * ca.sin(gamma)
-            - a_w_t
+            T / physical.mass * ca.cos(alpha + delta)
+            - D / physical.mass
+            - physical.gravity * ca.sin(gamma)
+            - Wdot_x * ca.cos(gamma)
+            - Wdot_h * ca.sin(gamma)
         )
-
-        # ----------------------------------------------------
-        # Flight-path-angle dynamics
-        # ----------------------------------------------------
-
         gamma_dot = (
-            (L - m * g * ca.cos(gamma)) / (m * V)
-            - a_w_n / V
+            T / (physical.mass * V) * ca.sin(alpha + delta)
+            + L / (physical.mass * V)
+            - physical.gravity / V * ca.cos(gamma)
+            + (Wdot_x * ca.sin(gamma) - Wdot_h * ca.cos(gamma)) / V
         )
-
-        # ----------------------------------------------------
-        # Return state derivatives
-        # ----------------------------------------------------
-
-        return ca.vertcat(
-            s_dot,
-            h_dot,
-            V_dot,
-            gamma_dot,
-        )
+        return ca.vertcat(x_dot, h_dot, V_dot, gamma_dot, alpha_dot)

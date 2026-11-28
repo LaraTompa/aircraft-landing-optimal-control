@@ -1,0 +1,54 @@
+# Bulirsch–Montrone–Pesch abort-landing minimax problem.
+# State distances/speeds are converted from the paper's ft and ft/s to SI;
+# angular values are written in degrees and converted by the config loader.
+name: abort_landing_minimax
+
+time:
+  initial: 0.0
+  final: 40.0
+  intervals: 100
+
+initial_state:
+  horizontal_position: 0.0       # m; 0 ft
+  altitude: 182.88               # m; 600 ft
+  airspeed: 73.06056             # m/s; 239.7 ft/s
+  flight_path_angle: -2.249             # deg; paper table
+  angle_of_attack: 7.353                # deg; paper table
+
+terminal_state:
+  horizontal_position: null      # free in the paper
+  altitude: null                 # free; this is an abort-landing problem
+  airspeed: null                 # free in the paper
+  flight_path_angle: 7.431              # deg; gamma_f = 0.1296942 rad
+  angle_of_attack: null          # free in the paper
+
+state_constraints:
+  horizontal_position:
+    min: 0.0                       # m; wind model is defined for x >= 0
+    max: null
+  altitude:
+    min: null                     # clearance is handled by the minimax path constraint
+    max: null
+  airspeed:
+    min: 1.0                       # m/s; keeps the 1/V dynamics in their physical domain
+    max: null
+  flight_path_angle:
+    min: null
+    max: null
+  angle_of_attack:
+    min: null                     # paper constraint is one-sided: alpha <= alpha_max
+    max: null                     # inherit Airbus alpha_max from aircraft YAML
+
+control_constraints:
+  angle_of_attack_rate:
+    min: -3.0                      # deg/s; -0.05236 rad/s
+    max: 3.0                       # deg/s; +0.05236 rad/s
+
+objectives:
+  minimax_clearance:
+    type: minimax_clearance
+    theta: 1.0
+    runway_height: 304.8          # m; h_R = 1000 ft in the paper
+
+initial_guess:
+  angle_of_attack_rate: 0.0      # deg/s

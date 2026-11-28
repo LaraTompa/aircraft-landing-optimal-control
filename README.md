@@ -72,6 +72,16 @@ The landing problem uses a fixed 65-second duration, an initial airspeed of 95 m
 
 The landing script reads `configs/experiments/baseline_pointmass_simple.yaml`, solves the squared-thrust and linear-thrust objectives on the same 100-interval problem, and warm-starts the second solve from the first. It writes `solutions.npz`, `metadata.json`, and three PNGs under `results/baseline_point_mass_gaussian/`; the PNGs are named `squared_thrust_solution.png`, `linear_thrust_solution.png`, and `wind_field.png`. It also opens the solution plots and a following-view animation at approximately 5x real time. The animation uses the optimized flight-path angle as its pitch approximation. The point-mass model does not calculate aircraft pitch or wheel position, so these are visualization assumptions, not optimized aircraft attitudes or validated gear geometry.
 
+### Angle-of-attack aircraft model (adaptation from [2])
+
+`PointMassAircraft` implements the five-state model `[x, h, V, gamma, alpha]` with scalar control `alpha_dot`. It uses the configured quadratic thrust polynomial and power ramp, quadratic drag polar, and piecewise lift polar. The original four-state/two-control dynamics remain available as `LegacyPointMassAircraft` (`dynamics.model: legacy_point_mass`) for the existing baseline experiment. The OCP builder takes dimensions, state/control indices, bounds and initial guesses from the selected model/problem config. Select with `create_aircraft_model("point_mass", ...)` or `create_aircraft_model("legacy_point_mass", ...)`; configure the paper model with `PointMassAircraftConfig` loaded by `load_point_mass_aircraft_config(...)`.
+
+The schema in `configs/aircraft/airbus_point_mass.yaml` intentionally contains aircraft parameters.
+
+The new dynamics use the existing wind interface unchanged. A paper-model landing problem must provide angle-of-attack boundary values and bounds, angle-of-attack-rate control bounds and an initial control guess. Problem YAML expresses angle and rate values in degrees and degrees/second; the loader converts them to radians and radians/second. Objectives can refer to `angle_of_attack_rate`. The existing baseline config explicitly selects the legacy four-state/two-control model so its previous thrust/CL optimization remains runnable while Airbus coefficients are identified.
+
+`PaperWindshear(nu=1.0)` implements the steady Bulirsch–Montrone–Pesch profile. Its default `units="si"` adapts the paper's feet and ft/s equations to the point-mass model's metre, m/s interface; use `units="ft"` to query the equations directly in paper units. The Gaussian downdraft remains available as a separate wind model.
+
 ### Dependencies
 | Package | Purpose |
 |---|---|
@@ -80,3 +90,7 @@ The landing script reads `configs/experiments/baseline_pointmass_simple.yaml`, s
 | [SciPy](https://scipy.org/) | Scientific computing and supporting numerical methods |
 | [Matplotlib](https://matplotlib.org/) | Plotting trajectories, controls, convergence, and other results |
 | [PyYAML](https://pyyaml.org/) | Reading aircraft, wind, problem, and experiment configuration files |
+
+### References
+[1] Standardized Geometry Formats for Aircraft Conceptual Design and Phisics-based Aerodynamics and Structural Analysis, Liana Coellen, 2021
+[2] Abort Landing in the Presence of a Windshear as a Minmax Optimal Control Problem, R. Bulirsch, F. Montrone, H.J. Pesch, 1991

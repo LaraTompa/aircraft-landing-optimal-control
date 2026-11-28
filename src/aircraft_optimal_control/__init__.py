@@ -9,8 +9,10 @@ and visualization utilities.
 
 from aircraft_optimal_control.models import (
     AircraftModel,
+    LegacyPointMassAircraft,
     PointMassAircraft,
     compute_aerodynamic_forces,
+    create_aircraft_model,
 )
 
 from aircraft_optimal_control.optimal_control import (
@@ -24,8 +26,10 @@ from aircraft_optimal_control.config.loader import (
 
 __all__ = [
     "AircraftModel",
+    "LegacyPointMassAircraft",
     "PointMassAircraft",
     "compute_aerodynamic_forces",
+    "create_aircraft_model",
     "LandingOptimalControlProblem",
     "load_experiment",
 ]
