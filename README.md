@@ -93,4 +93,5 @@ The new dynamics use the existing wind interface unchanged. A paper-model landin
 
 ### References
 [1] Standardized Geometry Formats for Aircraft Conceptual Design and Phisics-based Aerodynamics and Structural Analysis, Liana Coellen, 2021
+
 [2] Abort Landing in the Presence of a Windshear as a Minmax Optimal Control Problem, R. Bulirsch, F. Montrone, H.J. Pesch, 1991
