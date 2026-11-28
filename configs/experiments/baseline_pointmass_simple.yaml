@@ -3,12 +3,12 @@
 
 name: baseline_point_mass_gaussian
 
-aircraft: ../aircraft/aircraft_pointmass.yaml
+aircraft: ../aircraft/point_mass_baseline.yaml
 wind: ../wind/gaussian_downdraft.yaml
 problem: ../problems/landing_thrust.yaml
 
 dynamics:
-  model: point_mass
+  model: legacy_point_mass
   wind_aware: true
 
 transcription:

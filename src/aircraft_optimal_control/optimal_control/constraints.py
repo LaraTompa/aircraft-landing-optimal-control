@@ -5,9 +5,24 @@ def add_boundary_constraints(
     initial_state,
     terminal_state,
 ):
-    """Apply fixed initial and terminal state constraints."""
-    opti.subject_to(X[:, 0] == initial_state)
-    opti.subject_to(X[:, -1] == terminal_state)
+    """Apply specified initial and terminal state values.
+
+    Mapping inputs allow free terminal components and free auxiliary states;
+    vector inputs retain compatibility with the former all-fixed API.
+    """
+    if isinstance(initial_state, dict):
+        for index, value in initial_state.items():
+            if value is not None:
+                opti.subject_to(X[index, 0] == value)
+    else:
+        opti.subject_to(X[:, 0] == initial_state)
+
+    if isinstance(terminal_state, dict):
+        for index, value in terminal_state.items():
+            if value is not None:
+                opti.subject_to(X[index, -1] == value)
+    else:
+        opti.subject_to(X[:, -1] == terminal_state)
 
 
 def _apply_bounds(opti, variable, bounds):
@@ -24,54 +39,35 @@ def _apply_bounds(opti, variable, bounds):
 def add_state_constraints(
     opti,
     X,
-    altitude_index,
-    airspeed_index,
-    flight_path_angle_index,
-    altitude_bounds,
-    airspeed_bounds,
-    flight_path_angle_bounds,
+    state_indices,
+    state_bounds,
 ):
-    """Apply state bounds over all discretization nodes."""
-
-    _apply_bounds(
-        opti,
-        X[altitude_index, :],
-        altitude_bounds,
-    )
-
-    _apply_bounds(
-        opti,
-        X[airspeed_index, :],
-        airspeed_bounds,
-    )
-
-    _apply_bounds(
-        opti,
-        X[flight_path_angle_index, :],
-        flight_path_angle_bounds,
-    )
+    """Apply configured state bounds over all discretization nodes."""
+    for name, bounds in state_bounds.items():
+        _apply_bounds(opti, X[state_indices[name], :], bounds)
 
 
 def add_control_constraints(
     opti,
     U,
-    thrust_index,
-    lift_coefficient_index,
-    thrust_bounds,
-    lift_coefficient_bounds,
+    control_indices,
+    control_bounds,
 ):
-    """Apply control bounds over all control intervals."""
+    """Apply configured control bounds over all control intervals."""
+    for name, bounds in control_bounds.items():
+        _apply_bounds(opti, U[control_indices[name], :], bounds)
 
-    _apply_bounds(
-        opti,
-        U[thrust_index, :],
-        thrust_bounds,
-    )
 
-    _apply_bounds(
-        opti,
-        U[lift_coefficient_index, :],
-        lift_coefficient_bounds,
+def add_minimax_clearance_constraint(
+    opti,
+    X,
+    altitude_index,
+    zeta_index,
+    runway_height,
+):
+    """Enforce h_R - h(t) - zeta(t) <= 0 at transcription nodes."""
+    opti.subject_to(
+        runway_height - X[altitude_index, :] - X[zeta_index, :] <= 0
     )
 
 
@@ -98,19 +94,13 @@ def add_landing_constraints(
     add_state_constraints(
         opti=opti,
         X=X,
-        altitude_index=state_indices["altitude"],
-        airspeed_index=state_indices["airspeed"],
-        flight_path_angle_index=state_indices["flight_path_angle"],
-        altitude_bounds=state_bounds["altitude"],
-        airspeed_bounds=state_bounds["airspeed"],
-        flight_path_angle_bounds=state_bounds["flight_path_angle"],
+        state_indices=state_indices,
+        state_bounds=state_bounds,
     )
 
     add_control_constraints(
         opti=opti,
         U=U,
-        thrust_index=control_indices["thrust"],
-        lift_coefficient_index=control_indices["lift_coefficient"],
-        thrust_bounds=control_bounds["thrust"],
-        lift_coefficient_bounds=control_bounds["lift_coefficient"],
+        control_indices=control_indices,
+        control_bounds=control_bounds,
     )

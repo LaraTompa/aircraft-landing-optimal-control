@@ -7,9 +7,10 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from src.aircraft_optimal_control.config.loader import load_experiment
-from src.aircraft_optimal_control.models.point_mass import PointMassAircraft
-from src.aircraft_optimal_control.disturbance.gaussian import GaussianWindField
+from src.aircraft_optimal_control.models.factory import create_aircraft_model as make_aircraft_model
+from src.aircraft_optimal_control.disturbance.gaussian_downdraft import GaussianWindField
 from src.aircraft_optimal_control.disturbance.no_wind import NoWindField
+from src.aircraft_optimal_control.disturbance.paper_windshear import PaperWindshear
 
 from src.experiments.runner import run_comparison
 
@@ -22,12 +23,19 @@ def create_aircraft_model(config):
     elif config.wind.type == "none":
         wind_model = NoWindField(config.wind)
 
+    elif config.wind.type == "paper_windshear":
+        wind_model = PaperWindshear(
+            nu=config.wind.intensity,
+            units="si",
+        )
+
     else:
         raise ValueError(
             f"Unsupported wind type: {config.wind.type}"
         )
 
-    return PointMassAircraft(
+    return make_aircraft_model(
+        model=config.dynamics.model,
         aircraft_config=config.aircraft,
         wind_model=wind_model,
         wind_aware=config.dynamics.wind_aware,
@@ -36,11 +44,16 @@ def create_aircraft_model(config):
 
 def main():
 
+    experiment_file = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else "baseline_pointmass_simple.yaml"
+    )
     config_path = (
         PROJECT_ROOT
         / "configs"
         / "experiments"
-        / "baseline_pointmass_simple.yaml"
+        / experiment_file
     )
 
     config = load_experiment(config_path)

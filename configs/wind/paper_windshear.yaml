@@ -1,0 +1,4 @@
+# Bulirsch–Montrone–Pesch steady windshear (equation 6).
+name: paper_windshear
+type: paper_windshear
+nu: 1.0

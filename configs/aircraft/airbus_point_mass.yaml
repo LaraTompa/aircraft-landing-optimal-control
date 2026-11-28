@@ -1,0 +1,30 @@
+
+name: airbus_point_mass
+
+physical:
+  mass: 64500                       # kg; depends on aircraft variant/loading 
+  wing_area: 122.4                  # m^2; identify variant/configuration ([1])
+  thrust_axis_inclination: 0.0349    # rad; identify engine installation convention (2 degrees) ([1])
+  gravity: 9.81                    # m/s^2; normally set to local standard 
+  air_density: 1.225            # kg/m^3; specify atmospheric condition
+
+thrust_model:
+  A0: 180136.9                         # N (static thrust at zero speed) ([1])
+  A1: -561.34                         # N/(m/s) (calculated) (computed using two-shaft turbofan thrust-lapse model from Bartel & Young (2008))
+  A2: 1.0635                         # N/(m/s)^2 (calculated) (computed using two-shaft turbofan thrust-lapse model from Bartel & Young (2008))
+  power_schedule:
+    beta0: 0.312                      # # dimensionless (stabilized approach thrust fraction at t = 0)
+    beta_dot0: 0.172                # 1/s
+    t0: 4.0                       # s; ramp for t<t0, full power for t>=t0
+
+aerodynamics:
+  drag:
+    B0: 0.13851                       # Expressing drag as a function of lift C_D=C_D_tot+k_landC_L^2 from OpenAP data, C_D_tot=0.09 (clean+landing_gear+full_flaps), k_land=0.044
+    B1: 0.50358                       # per radian OpenAP data for drag coefficient slop 
+    B2: 1.30691                       # per radian^2
+  lift:
+    C0: 1.05                        #OpenAP data for lift coefficient at zero angle of attack
+    C1: 5.45                       # per radian OpenAP data for lift coefficient slope
+    C2: -31.3218                       # per radian^2 (compted using smooth peak coefficient method at alpha_star from OpenAP data)
+    alpha_star: 0.192               # rad from OpenAP data for lift coefficient curve
+    alpha_max: 0.279              # rad; operational/model bound from OpenAP data
